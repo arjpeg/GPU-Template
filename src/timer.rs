@@ -6,7 +6,7 @@ pub struct FrameTimer {
     /// The instant the previous frame was completed.
     last_frame: Instant,
     /// The duration of how long the last frame took to complete.
-    dt: Duration,
+    pub dt: Duration,
 
     /// The instant of the last full second of updates.
     last_second: Instant,

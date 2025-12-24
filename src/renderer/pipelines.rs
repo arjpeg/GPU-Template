@@ -6,14 +6,32 @@ use crate::renderer::shaders::Shaders;
 pub struct Pipelines {
     /// The pipeline used for rendering a triangle.
     pub triangle_pipeline: RenderPipeline,
+
+    /// The bind group layout for holding a camera's transformation matrix.
+    pub camera_bind_group_layout: BindGroupLayout,
 }
 
 impl Pipelines {
     /// Creates all the [`Pipelines`] given their associated shaders.
     pub fn new(device: &Device, shaders: &Shaders) -> Self {
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("Pipelines::camera_bind_group_layout"),
+                entries: &[BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
         let triangle_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Pipelines::triangle_pipeline_layout"),
-            bind_group_layouts: &[],
+            bind_group_layouts: &[&camera_bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -43,6 +61,9 @@ impl Pipelines {
             cache: None,
         });
 
-        Self { triangle_pipeline }
+        Self {
+            triangle_pipeline,
+            camera_bind_group_layout,
+        }
     }
 }

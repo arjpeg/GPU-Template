@@ -1,3 +1,4 @@
+pub mod camera;
 pub mod pipelines;
 pub mod shaders;
 
@@ -6,7 +7,7 @@ use std::sync::Arc;
 use wgpu::*;
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::renderer::{pipelines::Pipelines, shaders::Shaders};
+use crate::renderer::{camera::Camera, pipelines::Pipelines, shaders::Shaders};
 
 /// Manages all GPU state and renders all game content.
 #[allow(unused)]
@@ -25,6 +26,11 @@ pub struct Renderer {
     shaders: Shaders,
     /// All (compute and render) pipelines and bind group layouts used in the application.
     pipelines: Pipelines,
+
+    /// The bind group holding the `camera_buffer`.
+    camera_bind_group: BindGroup,
+    /// The uniform buffer holding the camera's view-projection matrix.
+    camera_buffer: Buffer,
 }
 
 impl Renderer {
@@ -53,6 +59,22 @@ impl Renderer {
         let shaders = Shaders::new(&device);
         let pipelines = Pipelines::new(&device, &shaders);
 
+        let camera_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("Renderer::camera_buffer"),
+            size: size_of::<glam::Mat4>() as _,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let camera_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("Renderer::camera_bind_group"),
+            layout: &pipelines.camera_bind_group_layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
+
         Ok(Self {
             device,
             queue,
@@ -60,11 +82,13 @@ impl Renderer {
             surface_config,
             shaders,
             pipelines,
+            camera_bind_group,
+            camera_buffer,
         })
     }
 
     /// Renders all world content onto the surface.
-    pub fn render(&mut self, pre_present: impl FnOnce()) {
+    pub fn render(&mut self, camera: &Camera, pre_present: impl FnOnce()) {
         let output = self.surface.get_current_texture().unwrap();
         let view = output
             .texture
@@ -73,6 +97,12 @@ impl Renderer {
         let mut encoder = self
             .device
             .create_command_encoder(&CommandEncoderDescriptor::default());
+
+        self.queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::bytes_of(&camera.view_projection()),
+        );
 
         {
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
@@ -96,7 +126,9 @@ impl Renderer {
                 occlusion_query_set: None,
             });
 
+            pass.set_bind_group(0, &self.camera_bind_group, &[]);
             pass.set_pipeline(&self.pipelines.triangle_pipeline);
+
             pass.draw(0..3, 0..1);
         }
 

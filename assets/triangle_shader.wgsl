@@ -1,7 +1,10 @@
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec3<f32>,
-} 
+}
+
+@group(0) @binding(0)
+var<uniform> camera_view_projection: mat4x4<f32>;
 
 @vertex
 fn vs_main(
@@ -21,7 +24,7 @@ fn vs_main(
 
     var out: VertexOutput;
 
-    out.clip_position = vec4<f32>(positions[in_vertex_index], 0.0, 1.0);
+    out.clip_position = camera_view_projection * vec4<f32>(positions[in_vertex_index], 0.0, 1.0);
     out.color = colors[in_vertex_index];
 
     return out;

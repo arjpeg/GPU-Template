@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use glam::vec3;
 #[cfg(target_arch = "wasm32")]
 use winit::event_loop::EventLoopProxy;
 
@@ -11,7 +12,11 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use crate::{input::InputState, renderer::Renderer, timer::FrameTimer};
+use crate::{
+    input::InputState,
+    renderer::{Renderer, camera::Camera},
+    timer::FrameTimer,
+};
 
 /// Manages all subsystems and handles incoming events.
 pub struct App {
@@ -19,6 +24,9 @@ pub struct App {
     pub window: Arc<Window>,
     /// The renderer responsible drawing all game content to the world.
     pub renderer: Renderer,
+    /// The primary camera describing the player's orientation.
+    pub camera: Camera,
+
     /// The state of all input systems.
     pub input: InputState,
     /// The timer keeping track of frame durations.
@@ -30,12 +38,23 @@ impl App {
     pub async fn new(window: Arc<Window>) -> Self {
         let renderer = Renderer::new(Arc::clone(&window)).await.unwrap();
 
+        let camera = Camera {
+            position: vec3(0.0, 0.0, 2.0),
+            yaw: 0.0,
+            pitch: 0.0,
+            fov: 45.0f32.to_radians(),
+            aspect_ratio: 0.0,
+            movement_sensitivity: 2.0,
+            mouse_sensitivity: 0.005,
+        };
+
         let input = InputState::new(Arc::clone(&window));
         let timer = FrameTimer::new();
 
         Self {
             window,
             renderer,
+            camera,
             input,
             timer,
         }
@@ -65,13 +84,26 @@ impl App {
     fn update(&mut self) {
         self.timer.tick();
 
-        self.renderer.render(|| self.window.pre_present_notify());
+        let dt = self.timer.dt.as_secs_f32();
+
+        if self.input.focused {
+            self.camera
+                .update_position(|k| self.input.keys_held.contains(k), dt);
+            self.camera.update_orientation(self.input.mouse_delta);
+        }
+
+        self.input.mouse_delta = (0.0, 0.0);
+
+        self.renderer
+            .render(&self.camera, || self.window.pre_present_notify());
+
         self.window.request_redraw();
     }
 
     /// Resizes the state of the app to match the new window size.
     fn resize(&mut self, size: PhysicalSize<u32>) {
         self.renderer.resize(size);
+        self.camera.resize(size);
     }
 }
 
@@ -135,7 +167,8 @@ impl ApplicationHandler<App> for AppHandler {
         }
     }
 
-    fn user_event(&mut self, _: &ActiveEventLoop, app: App) {
+    fn user_event(&mut self, _: &ActiveEventLoop, mut app: App) {
+        app.resize(app.window.inner_size());
         self.app = Some(app);
     }
 

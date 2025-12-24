@@ -8,7 +8,9 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 anyhow = "1.0.100"
+bytemuck = { version = "1.24.0", features = ["derive"] }
 env_logger = "0.11.8"
+glam = { version = "0.30.9", features = ["bytemuck"] }
 log = "0.4.29"
 pollster = "0.4.0"
 web-time = "1.1.0"
