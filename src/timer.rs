@@ -36,8 +36,10 @@ impl FrameTimer {
 
         self.frames_accumulated += 1;
 
-        if self.last_second.elapsed() > Duration::from_secs(1) {
-            self.fps = self.frames_accumulated as f32 / self.last_second.elapsed().as_secs_f32();
+        let last_second_elapsed = self.last_second.elapsed();
+
+        if last_second_elapsed > Duration::from_secs(1) {
+            self.fps = self.frames_accumulated as f32 / last_second_elapsed.as_secs_f32();
 
             log::info!(
                 "Running at {:.2} fps ({} frames accumulated)",

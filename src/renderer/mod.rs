@@ -9,6 +9,7 @@ use winit::{dpi::PhysicalSize, window::Window};
 use crate::renderer::{pipelines::Pipelines, shaders::Shaders};
 
 /// Manages all GPU state and renders all game content.
+#[allow(unused)]
 pub struct Renderer {
     /// A handle to the physical device used to render (usually the GPU).
     pub device: Device,

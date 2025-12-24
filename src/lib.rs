@@ -13,7 +13,7 @@ use wasm_bindgen::prelude::*;
 pub fn run() {
     let event_loop = EventLoop::with_user_event().build().unwrap();
 
-    event_loop.set_control_flow(ControlFlow::Poll);
+    event_loop.set_control_flow(ControlFlow::Wait);
 
     #[cfg(target_arch = "wasm32")]
     {
