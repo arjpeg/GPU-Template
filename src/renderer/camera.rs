@@ -19,9 +19,9 @@ pub struct Camera {
     /// The current aspect ratio of the rendering surface.
     pub aspect_ratio: f32,
 
-    /// How fast the player can move the control across space.
+    /// How fast the player can move the camera across space.
     pub movement_sensitivity: f32,
-    /// How fast the camera responds to rotated by the mouse.
+    /// How fast the camera rotates in response to the mouse.
     pub mouse_sensitivity: f32,
 }
 

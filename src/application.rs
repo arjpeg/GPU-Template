@@ -22,7 +22,7 @@ use crate::{
 pub struct App {
     /// The primary window being rendered onto.
     window: Arc<Window>,
-    /// The renderer responsible drawing all game content to the world.
+    /// The renderer responsible for drawing all game content to the world.
     renderer: Renderer,
     /// The primary camera describing the player's orientation.
     camera: Camera,
