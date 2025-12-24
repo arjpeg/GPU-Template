@@ -48,7 +48,7 @@ impl InputState {
                     },
                 ..
             } => {
-                if *code == KeyCode::Escape {
+                if *code == KeyCode::KeyQ {
                     self.set_focused(false);
                     return;
                 }
@@ -82,11 +82,11 @@ impl InputState {
 
         match focused {
             true => {
-                let _ = self.window.set_cursor_grab(CursorGrabMode::Locked);
-                self.window.set_cursor_visible(false);
+                self.window.set_cursor_grab(CursorGrabMode::Locked).unwrap();
+                self.window.set_cursor_visible(true);
             }
             false => {
-                let _ = self.window.set_cursor_grab(CursorGrabMode::None);
+                self.window.set_cursor_grab(CursorGrabMode::None).unwrap();
                 self.window.set_cursor_visible(true);
             }
         }

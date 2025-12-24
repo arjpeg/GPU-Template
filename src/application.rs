@@ -78,6 +78,10 @@ impl App {
     /// Processes an incoming [`DeviceEvent`].
     pub fn device_event(&mut self, event: &DeviceEvent) {
         self.input.device_event(event);
+
+        if self.input.focused {
+            self.camera.update_orientation(self.input.mouse_delta);
+        }
     }
 
     /// Runs the render and update cycle of the app.
@@ -89,10 +93,7 @@ impl App {
         if self.input.focused {
             self.camera
                 .update_position(|k| self.input.keys_held.contains(k), dt);
-            self.camera.update_orientation(self.input.mouse_delta);
         }
-
-        self.input.mouse_delta = (0.0, 0.0);
 
         self.renderer
             .render(&self.camera, || self.window.pre_present_notify());
