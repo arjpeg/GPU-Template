@@ -83,7 +83,7 @@ impl InputState {
         match focused {
             true => {
                 self.window.set_cursor_grab(CursorGrabMode::Locked).unwrap();
-                self.window.set_cursor_visible(true);
+                self.window.set_cursor_visible(false);
             }
             false => {
                 self.window.set_cursor_grab(CursorGrabMode::None).unwrap();
