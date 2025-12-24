@@ -13,7 +13,7 @@ pub struct FrameTimer {
     /// The number of frames accumulated since the `last_second`.
     frames_accumulated: usize,
     /// An estimate of the current FPS in the last second.
-    fps: f32,
+    pub fps: f32,
 }
 
 impl FrameTimer {

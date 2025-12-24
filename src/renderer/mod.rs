@@ -17,7 +17,9 @@ pub struct Renderer {
     /// A queue by which commands are sent to the rendering device.
     pub queue: Queue,
 
-    /// The primary surface (window) being rendered onto.
+    /// The window being rendered onto.
+    window: Arc<Window>,
+    /// The primary surface texture being rendered onto.
     pub surface: Surface<'static>,
     /// The configuration of the `surface`.
     pub surface_config: SurfaceConfiguration,
@@ -26,6 +28,9 @@ pub struct Renderer {
     shaders: Shaders,
     /// All (compute and render) pipelines and bind group layouts used in the application.
     pipelines: Pipelines,
+
+    /// Manages rendering egui content.
+    ui_renderer: egui_wgpu::Renderer,
 
     /// The bind group holding the `camera_buffer`.
     camera_bind_group: BindGroup,
@@ -59,6 +64,12 @@ impl Renderer {
         let shaders = Shaders::new(&device);
         let pipelines = Pipelines::new(&device, &shaders);
 
+        let ui_renderer = egui_wgpu::Renderer::new(
+            &device,
+            TextureFormat::Bgra8Unorm,
+            egui_wgpu::RendererOptions::default(),
+        );
+
         let camera_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Renderer::camera_buffer"),
             size: size_of::<glam::Mat4>() as _,
@@ -78,17 +89,25 @@ impl Renderer {
         Ok(Self {
             device,
             queue,
+            window,
             surface,
             surface_config,
             shaders,
             pipelines,
+            ui_renderer,
             camera_bind_group,
             camera_buffer,
         })
     }
 
     /// Renders all world content onto the surface.
-    pub fn render(&mut self, camera: &Camera, pre_present: impl FnOnce()) {
+    pub fn render(
+        &mut self,
+        camera: &Camera,
+        ui_context: &egui::Context,
+        ui: egui::FullOutput,
+        pre_present: impl FnOnce(),
+    ) {
         let output = self.surface.get_current_texture().unwrap();
         let view = output
             .texture
@@ -132,6 +151,8 @@ impl Renderer {
             pass.draw(0..3, 0..1);
         }
 
+        self.render_ui(&view, &mut encoder, ui_context, ui);
+
         self.queue.submit([encoder.finish()]);
 
         pre_present();
@@ -164,6 +185,61 @@ impl Renderer {
             desired_maximum_frame_latency: 1,
             alpha_mode: CompositeAlphaMode::Auto,
             view_formats: vec![],
+        }
+    }
+
+    fn render_ui(
+        &mut self,
+        view: &TextureView,
+        encoder: &mut CommandEncoder,
+        context: &egui::Context,
+        output: egui::FullOutput,
+    ) {
+        let tris = context.tessellate(output.shapes, output.pixels_per_point);
+
+        for (id, image_delta) in &output.textures_delta.set {
+            self.ui_renderer
+                .update_texture(&self.device, &self.queue, *id, &image_delta);
+        }
+
+        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: self.window.inner_size().into(),
+            pixels_per_point: self.window.scale_factor() as _,
+        };
+
+        self.ui_renderer.update_buffers(
+            &self.device,
+            &self.queue,
+            encoder,
+            &tris,
+            &screen_descriptor,
+        );
+
+        let mut pass = encoder
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                label: Some("Renderer::ui_render_pass"),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            })
+            .forget_lifetime();
+
+        self.ui_renderer
+            .render(&mut pass, &tris, &screen_descriptor);
+
+        drop(pass);
+
+        for x in &output.textures_delta.free {
+            self.ui_renderer.free_texture(x)
         }
     }
 }

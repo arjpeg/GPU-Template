@@ -21,16 +21,21 @@ use crate::{
 /// Manages all subsystems and handles incoming events.
 pub struct App {
     /// The primary window being rendered onto.
-    pub window: Arc<Window>,
+    window: Arc<Window>,
     /// The renderer responsible drawing all game content to the world.
-    pub renderer: Renderer,
+    renderer: Renderer,
     /// The primary camera describing the player's orientation.
-    pub camera: Camera,
+    camera: Camera,
 
     /// The state of all input systems.
-    pub input: InputState,
+    input: InputState,
     /// The timer keeping track of frame durations.
-    pub timer: FrameTimer,
+    timer: FrameTimer,
+
+    /// The state of the UI context.
+    ui_context: egui::Context,
+    /// Updates the `ui_context` with the latest inputs.
+    ui_input: egui_winit::State,
 }
 
 impl App {
@@ -51,17 +56,33 @@ impl App {
         let input = InputState::new(Arc::clone(&window));
         let timer = FrameTimer::new();
 
+        let ui_context = egui::Context::default();
+        let ui_input = egui_winit::State::new(
+            ui_context.clone(),
+            ui_context.viewport_id(),
+            &window,
+            Some(window.scale_factor() as f32),
+            None,
+            None,
+        );
+
         Self {
             window,
             renderer,
             camera,
             input,
             timer,
+            ui_context,
+            ui_input,
         }
     }
 
     /// Processes an incoming [`WindowEvent`].
     pub fn window_event(&mut self, event_loop: &ActiveEventLoop, event: &WindowEvent) {
+        if self.ui_input.on_window_event(&self.window, event).consumed {
+            return;
+        }
+
         self.input.window_event(event);
 
         match event {
@@ -95,10 +116,35 @@ impl App {
                 .update_position(|k| self.input.keys_held.contains(k), dt);
         }
 
+        let ui = self
+            .ui_context
+            .clone()
+            .run(self.ui_input.take_egui_input(&self.window), |ui| {
+                self.ui(ui)
+            });
+
+        self.ui_input
+            .handle_platform_output(&self.window, ui.clone().platform_output);
+
         self.renderer
-            .render(&self.camera, || self.window.pre_present_notify());
+            .render(&self.camera, &self.ui_context, ui, || {
+                self.window.pre_present_notify()
+            });
 
         self.window.request_redraw();
+    }
+
+    /// Renders all application UI.
+    fn ui(&mut self, ui: &egui::Context) {
+        use egui::*;
+
+        Window::new("Render Info").show(ui, |ui| {
+            ui.label(format!("FPS: {:.2}", self.timer.fps,));
+            ui.label(format!(
+                "Frame Time: {:.2}ms",
+                self.timer.dt.as_secs_f32() * 1000.0
+            ));
+        });
     }
 
     /// Resizes the state of the app to match the new window size.
