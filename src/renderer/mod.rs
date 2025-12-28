@@ -138,6 +138,7 @@ impl Renderer {
     /// Resizes the internal rendering surface to match the new target size.
     pub fn resize(&mut self, size: PhysicalSize<u32>) {
         self.gpu.resize(size);
+        self.frame_targets.resize(&self.gpu.device, size);
     }
 
     fn render_ui(
