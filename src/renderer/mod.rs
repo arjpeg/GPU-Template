@@ -1,4 +1,5 @@
 pub mod camera;
+pub mod gpu_context;
 pub mod pipelines;
 pub mod shaders;
 
@@ -7,22 +8,15 @@ use std::sync::Arc;
 use wgpu::*;
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::renderer::{camera::Camera, pipelines::Pipelines, shaders::Shaders};
+use crate::renderer::{
+    camera::Camera, gpu_context::GpuContext, pipelines::Pipelines, shaders::Shaders,
+};
 
 /// Manages all GPU state and renders all game content.
 #[allow(unused)]
 pub struct Renderer {
-    /// A handle to the physical device used to render (usually the GPU).
-    pub device: Device,
-    /// A queue by which commands are sent to the rendering device.
-    pub queue: Queue,
-
-    /// The window being rendered onto.
-    window: Arc<Window>,
-    /// The primary surface texture being rendered onto.
-    pub surface: Surface<'static>,
-    /// The configuration of the `surface`.
-    pub surface_config: SurfaceConfiguration,
+    /// The core shared GPU state.
+    pub gpu: GpuContext,
 
     /// All shaders used in the rendering process.
     shaders: Shaders,
@@ -41,43 +35,25 @@ pub struct Renderer {
 impl Renderer {
     /// Initializes the rendering context, creating a new [`Renderer`].
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
-        let instance = Instance::new(&InstanceDescriptor {
-            backends: Backends::PRIMARY,
-            ..Default::default()
-        });
+        let gpu = GpuContext::new(window).await?;
 
-        let surface = instance.create_surface(Arc::clone(&window))?;
-
-        let adapter = instance
-            .request_adapter(&RequestAdapterOptions {
-                power_preference: PowerPreference::HighPerformance,
-                force_fallback_adapter: false,
-                compatible_surface: Some(&surface),
-            })
-            .await?;
-
-        let (device, queue) = adapter.request_device(&DeviceDescriptor::default()).await?;
-
-        let surface_config = Self::get_surface_config(&window);
-        surface.configure(&device, &surface_config);
-
-        let shaders = Shaders::new(&device);
-        let pipelines = Pipelines::new(&device, &shaders);
+        let shaders = Shaders::new(&gpu.device);
+        let pipelines = Pipelines::new(&gpu.device, &shaders);
 
         let ui_renderer = egui_wgpu::Renderer::new(
-            &device,
+            &gpu.device,
             TextureFormat::Bgra8Unorm,
             egui_wgpu::RendererOptions::default(),
         );
 
-        let camera_buffer = device.create_buffer(&BufferDescriptor {
+        let camera_buffer = gpu.device.create_buffer(&BufferDescriptor {
             label: Some("Renderer::camera_buffer"),
             size: size_of::<glam::Mat4>() as _,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let camera_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        let camera_bind_group = gpu.device.create_bind_group(&BindGroupDescriptor {
             label: Some("Renderer::camera_bind_group"),
             layout: &pipelines.camera_bind_group_layout,
             entries: &[BindGroupEntry {
@@ -87,11 +63,7 @@ impl Renderer {
         });
 
         Ok(Self {
-            device,
-            queue,
-            window,
-            surface,
-            surface_config,
+            gpu,
             shaders,
             pipelines,
             ui_renderer,
@@ -108,16 +80,17 @@ impl Renderer {
         ui: egui::FullOutput,
         pre_present: impl FnOnce(),
     ) {
-        let output = self.surface.get_current_texture().unwrap();
+        let output = self.gpu.surface.get_current_texture().unwrap();
         let view = output
             .texture
             .create_view(&TextureViewDescriptor::default());
 
         let mut encoder = self
+            .gpu
             .device
             .create_command_encoder(&CommandEncoderDescriptor::default());
 
-        self.queue.write_buffer(
+        self.gpu.queue.write_buffer(
             &self.camera_buffer,
             0,
             bytemuck::bytes_of(&camera.view_projection()),
@@ -153,7 +126,7 @@ impl Renderer {
 
         self.render_ui(&view, &mut encoder, ui_context, ui);
 
-        self.queue.submit([encoder.finish()]);
+        self.gpu.queue.submit([encoder.finish()]);
 
         pre_present();
         output.present();
@@ -161,31 +134,7 @@ impl Renderer {
 
     /// Resizes the internal rendering surface to match the new target size.
     pub fn resize(&mut self, size: PhysicalSize<u32>) {
-        let PhysicalSize { width, height } = size;
-
-        self.surface_config.width = width;
-        self.surface_config.height = height;
-
-        self.surface.configure(&self.device, &self.surface_config);
-    }
-
-    /// Returns an appropriate default [`SurfaceConfiguration`] for rendering to the given window.
-    fn get_surface_config(window: &Window) -> SurfaceConfiguration {
-        let PhysicalSize { width, height } = window.inner_size();
-
-        let width = width.max(1);
-        let height = height.max(1);
-
-        SurfaceConfiguration {
-            width,
-            height,
-            usage: TextureUsages::RENDER_ATTACHMENT,
-            format: TextureFormat::Bgra8Unorm,
-            present_mode: PresentMode::AutoVsync,
-            desired_maximum_frame_latency: 1,
-            alpha_mode: CompositeAlphaMode::Auto,
-            view_formats: vec![],
-        }
+        self.gpu.resize(size);
     }
 
     fn render_ui(
@@ -199,17 +148,17 @@ impl Renderer {
 
         for (id, image_delta) in &output.textures_delta.set {
             self.ui_renderer
-                .update_texture(&self.device, &self.queue, *id, &image_delta);
+                .update_texture(&self.gpu.device, &self.gpu.queue, *id, &image_delta);
         }
 
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: self.window.inner_size().into(),
-            pixels_per_point: self.window.scale_factor() as _,
+            size_in_pixels: self.gpu.window.inner_size().into(),
+            pixels_per_point: self.gpu.window.scale_factor() as _,
         };
 
         self.ui_renderer.update_buffers(
-            &self.device,
-            &self.queue,
+            &self.gpu.device,
+            &self.gpu.queue,
             encoder,
             &tris,
             &screen_descriptor,
