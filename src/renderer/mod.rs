@@ -1,15 +1,20 @@
 pub mod camera;
+pub mod frame;
 pub mod gpu_context;
 pub mod pipelines;
 pub mod shaders;
 
 use std::sync::Arc;
 
-use wgpu::*;
+use wgpu::{wgt::TextureViewDescriptor, *};
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::renderer::{
-    camera::Camera, gpu_context::GpuContext, pipelines::Pipelines, shaders::Shaders,
+    camera::{Camera, CameraGpuState},
+    frame::FrameTargets,
+    gpu_context::{GpuContext, SURFACE_VIEW_FORMAT},
+    pipelines::Pipelines,
+    shaders::Shaders,
 };
 
 /// Manages all GPU state and renders all game content.
@@ -23,13 +28,14 @@ pub struct Renderer {
     /// All (compute and render) pipelines and bind group layouts used in the application.
     pipelines: Pipelines,
 
+    /// The GPU textures that need to be attatched every frame.
+    frame_targets: FrameTargets,
+
     /// Manages rendering egui content.
     ui_renderer: egui_wgpu::Renderer,
 
-    /// The bind group holding the `camera_buffer`.
-    camera_bind_group: BindGroup,
-    /// The uniform buffer holding the camera's view-projection matrix.
-    camera_buffer: Buffer,
+    /// The gpu side state of the camera's view-projection matrix.
+    camera: CameraGpuState,
 }
 
 impl Renderer {
@@ -40,35 +46,23 @@ impl Renderer {
         let shaders = Shaders::new(&gpu.device);
         let pipelines = Pipelines::new(&gpu.device, &shaders);
 
+        let frame_targets = FrameTargets::new(gpu.window.inner_size(), &gpu.device);
+
         let ui_renderer = egui_wgpu::Renderer::new(
             &gpu.device,
-            TextureFormat::Bgra8Unorm,
+            SURFACE_VIEW_FORMAT,
             egui_wgpu::RendererOptions::default(),
         );
 
-        let camera_buffer = gpu.device.create_buffer(&BufferDescriptor {
-            label: Some("Renderer::camera_buffer"),
-            size: size_of::<glam::Mat4>() as _,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let camera_bind_group = gpu.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("Renderer::camera_bind_group"),
-            layout: &pipelines.camera_bind_group_layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-        });
+        let camera = CameraGpuState::new(&gpu.device, &pipelines);
 
         Ok(Self {
             gpu,
             shaders,
             pipelines,
+            frame_targets,
             ui_renderer,
-            camera_bind_group,
-            camera_buffer,
+            camera,
         })
     }
 
@@ -81,22 +75,24 @@ impl Renderer {
         pre_present: impl FnOnce(),
     ) {
         let output = self.gpu.surface.get_current_texture().unwrap();
-        let view = output
-            .texture
-            .create_view(&TextureViewDescriptor::default());
+        let view = output.texture.create_view(&TextureViewDescriptor {
+            format: Some(SURFACE_VIEW_FORMAT),
+            ..Default::default()
+        });
 
         let mut encoder = self
             .gpu
             .device
             .create_command_encoder(&CommandEncoderDescriptor::default());
 
-        self.gpu.queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::bytes_of(&camera.view_projection()),
-        );
+        self.camera.update_buffer(&self.gpu.queue, camera);
 
         {
+            let depth_texture = self
+                .frame_targets
+                .depth
+                .create_view(&TextureViewDescriptor::default());
+
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("Renderer::main_render_pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
@@ -113,12 +109,19 @@ impl Renderer {
                         store: StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &depth_texture,
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
 
-            pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            pass.set_bind_group(0, &self.camera.bind_group, &[]);
             pass.set_pipeline(&self.pipelines.triangle_pipeline);
 
             pass.draw(0..3, 0..1);

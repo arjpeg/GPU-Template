@@ -1,7 +1,10 @@
 use std::f32::consts::FRAC_PI_2;
 
 use glam::{Mat4, Vec3};
+use wgpu::{BindGroupDescriptor, BindGroupEntry, BufferDescriptor, BufferUsages, Device, Queue};
 use winit::{dpi::PhysicalSize, keyboard::KeyCode};
+
+use crate::renderer::pipelines::Pipelines;
 
 /// A first person camera without roll.
 #[derive(Debug, Clone, PartialEq)]
@@ -23,6 +26,14 @@ pub struct Camera {
     pub movement_sensitivity: f32,
     /// How fast the camera rotates in response to the mouse.
     pub mouse_sensitivity: f32,
+}
+
+/// Manages uploading and storing the camera's transformation matrix on the GPU.
+pub struct CameraGpuState {
+    /// The bind group holding the `buffer` in slot 0.
+    pub bind_group: wgpu::BindGroup,
+    /// The uniform buffer holding the view*projection matrix.
+    buffer: wgpu::Buffer,
 }
 
 impl Camera {
@@ -89,5 +100,37 @@ impl Camera {
         let PhysicalSize { width, height } = size;
 
         self.aspect_ratio = width as f32 / height as f32;
+    }
+}
+
+impl CameraGpuState {
+    /// Creates a new [`CameraGpuState`].
+    pub fn new(device: &Device, pipelines: &Pipelines) -> Self {
+        let buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("CameraGpu::camera_buffer"),
+            size: size_of::<Mat4>() as _,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("CameraGpu::camera_bind_group"),
+            layout: &pipelines.camera_bind_group_layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+        });
+
+        Self { bind_group, buffer }
+    }
+
+    /// Updates the uniform buffer to match the camera's current view*projection matrix.
+    pub fn update_buffer(&self, queue: &Queue, camera: &Camera) {
+        queue.write_buffer(
+            &self.buffer,
+            0,
+            bytemuck::bytes_of(&camera.view_projection()),
+        );
     }
 }

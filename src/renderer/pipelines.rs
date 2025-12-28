@@ -1,6 +1,6 @@
 use wgpu::*;
 
-use crate::renderer::shaders::Shaders;
+use crate::renderer::{frame::DEPTH_FORMAT, gpu_context::SURFACE_VIEW_FORMAT, shaders::Shaders};
 
 /// Manages the creation and lifecycle of all pipelines and their associated bind group layouts.
 pub struct Pipelines {
@@ -49,14 +49,20 @@ impl Pipelines {
                 entry_point: Some("fs_main"),
                 compilation_options: PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState {
-                    format: TextureFormat::Bgra8Unorm,
+                    format: SURFACE_VIEW_FORMAT,
                     blend: None,
                     write_mask: ColorWrites::ALL,
                 })],
             }),
             primitive: PrimitiveState::default(),
             multisample: MultisampleState::default(),
-            depth_stencil: None,
+            depth_stencil: Some(DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: CompareFunction::LessEqual,
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
             multiview: None,
             cache: None,
         });
