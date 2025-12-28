@@ -50,7 +50,7 @@ impl App {
             fov: 45.0f32.to_radians(),
             aspect_ratio: 0.0,
             movement_sensitivity: 2.0,
-            mouse_sensitivity: 0.005,
+            mouse_sensitivity: 0.0025,
         };
 
         let input = InputState::new(Arc::clone(&window));
@@ -177,7 +177,6 @@ impl AppHandler {
 
 impl ApplicationHandler<App> for AppHandler {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        #[allow(unused_mut)]
         let mut window_attributes = Window::default_attributes();
 
         #[cfg(target_arch = "wasm32")]
@@ -195,6 +194,13 @@ impl ApplicationHandler<App> for AppHandler {
                 .unchecked_into();
 
             window_attributes = window_attributes.with_canvas(Some(canvas));
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            window_attributes = window_attributes
+                .with_title("gpu-template")
+                .with_inner_size(winit::dpi::LogicalSize::new(1920, 1080));
         }
 
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());

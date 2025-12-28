@@ -6,7 +6,7 @@ pub mod shaders;
 
 use std::sync::Arc;
 
-use wgpu::{wgt::TextureViewDescriptor, *};
+use wgpu::*;
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::renderer::{
